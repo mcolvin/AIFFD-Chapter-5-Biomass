@@ -312,7 +312,8 @@ plot(weight_g~length_mm,data=ylb_lw,
     ylab="Weight (g)")
 # add a rug plot to see distribution of lengths
 # that do not have lengths to verify adequate coverage
-rug(ylb_lw[which(!is.na(ylb_lw$weight_g)),]$length_mm)    
+rug(ylb_lw[which(!is.na(ylb_lw$weight_g)),]$length_mm)  
+  
 ```
 
 ## Fitting the length weight relationship
@@ -325,11 +326,17 @@ data. The data is visualized using the `plot` function.
 
 
 ```{r}
-carp_lw$ln_length<-log(carp_lw$length)
-carp_lw$ln_weight<-log(carp_lw$weight)
-plot(ln_weight~ln_length,data=carp_lw,
+ylb_lw$ln_length<-log(ylb_lw$length)
+ylb_lw$ln_weight<-log(ylb_lw$weight)
+plot(ln_weight~ln_length,data=ylb_lw,
     xlab="Log fish length (mm)",
     ylab="Log fish weight (kg)")
+    
+exp(sum(na.omit(ylb_lw$ln_weight))    )
+(sum(na.omit(ylb_lw$weight))    )
+    
+    sum(ylb_lw$ln_weight)
+    
 ```
 
 A linear regression is fit to the log transformed length and weight data 
@@ -338,9 +345,9 @@ plot of raw data to visualize model fit.
 
 
 ```{r}
-fit<- lm(ln_weight~ln_length,data=carp_lw)
+fit<- lm(ln_weight~ln_length,data=ylb_lw)
 summary(fit)
-plot(ln_weight~ln_length,data=carp_lw,
+plot(ln_weight~ln_length,data=ylb_lw,
     xlab="Log fish length (mm)",
     ylab="Log fish weight (kg)")
 abline(coef(fit)[1],coef(fit)[2])
@@ -358,16 +365,30 @@ to estimate the variance for the biomass estimate.
 ```{r}
 # calculate the estimated mean weight for a fish of
 # a given length
-mean_weight<-predict(y,newdata=data.frame(ln_length=carp_lw$ln_length),se.fit = TRUE)
+mean_weight<-predict(fit,
+    newdata=data.frame(ln_length=ylb_lw$ln_length),
+    se.fit = TRUE)
+# get the need bits from the list returned
+mean_weight<-data.frame(mean_weight=mean_weight$fit,
+    std_error=mean_weight$se.fit)
+
 # take a look at the predicted mean weights and standard errors
 head(mean_weight)
 ```
+
+x<-rlnorm(10,10,0.3)
+sd_log_scale= sqrt(var(x))/mean(x)
+
+sd_log_scale*mean=sqrt(var(x))
+(sd_log_scale*mean)^2=var(x) # variance for each predication
+
 
 The biomass estimate is now the sum of the mean weights given the 
 measured lengths. Recall though weight values remain on log scale.
 
 ```{r}
-ln_biomass<- sum(mean_weight$ln_weight)
+ln_biomass<- sum(mean_weight$mean_weight)
+
 ```
 
 The variance associated with the biomass estimate is
@@ -375,7 +396,7 @@ the sum of the standard errors squared and is calculated
 in the R code chunk below. 
 
 ```{r}
-ln_biomass_variance<- sum(pp$se.fit)^2
+ln_biomass_variance<- sum(mean_weight$std_error)^2
 ```
 
 The 95% confidence intervals for the biomass estimate are calculated
@@ -385,9 +406,9 @@ sample, but in this case the values are still on log scale.
 ```{r}
 # t value 
 # note the lower value is negative and the upper is positive
-t_value<-qt(p=c(0.025,0.975), df=sum(sample_size$weight))
-lower_95_ci<- ln_biomass_variance+t_value[1]*sqrt(ln_biomass_variance)
-upper_95_ci<- ln_biomass_variance+t_value[2]*sqrt(ln_biomass_variance)
+t_value<-qt(p=c(0.025,0.975), df=sum(sample_size$weight)-1)
+lower_95_ci<- ln_biomass+t_value[1]*sqrt(ln_biomass_variance)
+upper_95_ci<- ln_biomass+t_value[2]*sqrt(ln_biomass_variance)
 ```
 
 The real biomass and 95% confidence interval estimates can be
@@ -396,11 +417,11 @@ kilograms.
 
 ```{r}
 # biomass estimate
-exp(mean)
+exp(ln_biomass)
 # lower 95% confidence interval for biomass
-exp(lwr)
+exp(lower_95_ci)
 # upper 95% confidence interval for biomass
-exp(upr)
+exp(upper_95_ci)
 ```
 
 # References
