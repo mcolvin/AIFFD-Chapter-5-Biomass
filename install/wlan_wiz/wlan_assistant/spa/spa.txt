@@ -1,0 +1,42 @@
+WA0001,Asistente para la configuración del dispositivo inalámbrico
+WA0002,1.02
+WA0101,Por favor espere...
+WA0201,Confirmación de la instalación
+WA0202,Durante la instalación se detectarán automáticamente las configuraciones inalámbricas del ordenador en el punto de acceso inalámbrico.Antes de conectar el dispositivo inalámbrico a una red corporativa por favor confirme con el administrador de red.
+WA0203,Tenga en cuenta que el asistente lo desconectará temporalmente de la red inalámbrica para poder conectar su dispositivo.  Durante este tiempo será desconectado de todos los servicios de red, incluido Internet.
+WA0204,Comprobado y confirmado
+WA0301,Detección de configuraciones de red inalámbricas existentes en su
+WA0302,Las configuraciones de red inalámbrica de su ordenador o punto de acceso inalámbrico han sido detectadas.
+WA0303,El nombre de la red inalámbrica detectado (Nombre del punto de acceso inalámbrico/enrutador):
+WA0304,SSID:
+WA0305,¿Desea conectar el dispositivo a esta red inalámbrica?
+WA0306,Sí, deseo conectar el dispositivo a esta red inalámbrica.
+WA0307,No, deseo conectar el dispositivo a otra red inalámbrica.
+WA0401,Activar las redes inalámbricas
+WA0402,Ahora debe activar las redes inalámbricas en el dispositivo mediante el panel de control. Se debe abrir otra ventana con más detalles sobre cómo hacer esto.
+WA0403,Cuando active las redes inalámbricas en el dispositivo, este asistente continuará con la configuración de manera automática.
+WA0404,(*) Si aparece la pantalla "Set Network Location" (Determinar la ubicación de la red), haga clic en "Cancel" (Cancelar).
+WA0501,Enviando configuraciones... Espere...
+WA0601,Compruebe el resultado de conexión de la "Configuración inalámbrica"
+WA0602,La página "WLAN Report" (Informe de WLAN) será impresa por el dispositivo. Busque <Connection> (Conexión) en la página y marque la descripción para confirmar el resultado de la conexión.
+WA0603,* Esta impresión puede tardar hasta 2 minutos.
+WA0604,Seleccione el resultado de la lista de selecciones a continuación y haga clic en "Next" (Siguiente).
+WA0605,"Connection : OK"
+WA0606,"Connection : Failed"
+WA4001,Salir de la configuración
+WA4002,La configuración no está completa.
+WA4003,Si sale de este programa de configuración, el dispositivo inalámbrico no será configurado.
+WA4004,Para continuar con este programa de configuración, haga clic en "Reanudar".
+WA4005,Para salir de este programa de configuración, haga clic en "Salir".
+WA5001,No se pudo encontrar el dispositivo
+WA5002,¿Desea volver a intentar con el mismo proceso de configuración o intentar otra cosa?
+WA5003,Volver a intentar
+WA5004,Si desea intentar nuevamente el mismo proceso de configuración, le recomendamos que desactive temporalmente todo su software de seguridad, como el firewall, que podría ejercer un bloqueo.
+WA5005,Intentar otra cosa
+WA5101,No se pudo conectar
+WA5102,El instalador le dará algunas opciones para probar otro método de conexión.  Haga clic en "Next" (Siguiente) para continuar.
+WA9901,< Atrás
+WA9902,Cancelar
+WA9903,Siguiente >
+WA9904,Salir
+WA9905,Reanudar
