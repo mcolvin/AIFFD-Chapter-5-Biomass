@@ -1,0 +1,146 @@
+```{r}
+a<-exp(-12.31097)# grams
+b<-3.1
+dat<-data.frame(l=runif(1000,20,200))
+# add some noise
+# equation 3
+# question-is weight really lognormally
+# distributed or is it more normal?
+dat$er<-rnorm(length(dat$l),0,0.3)
+dat$w_obs<-a*dat$l^b * exp(dat$er)
+biomass<-sum(dat$w_obs)
+plot(dat$l,dat$w_obs, xlab="Length (cm)", ylab="Weight (g)",las=1)
+```
+
+```{r}
+# fit the model
+dat$ln_w_obs<-log(dat$w_obs)
+dat$ln_l<-log(dat$l)
+plot(dat$ln_l,dat$ln_w_obs, xlab="Log length (cm)", ylab="Log weight (g)",las=1)
+fit<-lm(ln_w_obs~ln_l,dat)
+mse<-summary(fit)$sigma^2
+a_prime<-coef(fit)[1]
+b<-coef(fit)[2]
+# predicted weight log scale
+# equation 5
+dat$ln_w_hat<- a_prime + b * dat$ln_l
+points(ln_w_hat~ ln_l,dat,type="l",col="red")
+```
+
+
+```{r}
+# variance for each predicted weight
+# on log scale
+# equation 6
+X<-model.matrix(~ln_l,dat)
+# boom town-
+t(as.matrix(X[1,1:2]))%*%(t(X)%*%X)^-1%*%as.matrix(X[1,1:2])
+dat$var_i<-sapply(1:1000,function(i)
+    {
+    mse*(1+t(as.matrix(X[i,1:2]))%*%(t(X)%*%X)^-1%*%as.matrix(X[i,1:2]))
+    })
+dat$y_hat<- exp(fitted(fit)+dat$var_i/2)
+```
+
+
+```{r}
+## not corrected
+dat$y_hat_un<- exp(fitted(fit))
+plot(w_obs~l,dat, xlab="Length (cm)", ylab="Weight (g)",las=1)
+# bias corrected predicted values
+points(y_hat~l,dat,type='p',col='red')
+# uncorrected biased values
+points(y_hat_un~l,dat,type='p',col='blue')
+legend("topleft",legend=c("Bias corrected", "Biased"),col=c("red","blue"),bty='n',
+    pch=19)
+## variance for predicted value on real scale
+dat$var_pred_i<-exp(2*dat$ln_w_hat+ 2*dat$var_i)-exp(2*dat$ln_w_hat+dat$var_i)
+
+## confidence itntevals for expected value
+dat$lwr<- dat$y_hat*exp(-1*(1.96*dat$var_i+(dat$var_i/2)^2)^0.5)
+dat$upr<- dat$y_hat*exp((1.96*dat$var_i+(dat$var_i/2)^2)^0.5)
+
+sum(dat$y_hat)
+sum(dat$y_hat_un)
+sum(dat$w_obs)
+```
+
+
+```{r}
+plot(w_obs~l,dat)
+# bias corrected predicted values
+points(y_hat~l,dat,type='p',col='red')
+# uncorrected biased values
+points(y_hat_un~l,dat,type='p',col='blue')
+segments(dat$l,dat$lwr,dat$l,dat$upr)
+
+## estimate biomass
+biomass<- sum(dat$y_hat)
+sum(dat$w)
+sum(dat$y_hat_un)# biased
+var_biomass<- sum(dat$var_i) 
+biomass_lwr<- biomass*exp(-1*(1.96*var_biomass+(var_biomass/2)^2)^0.5)
+biomass_lwr<- biomass*exp(-1*(1.96*var_biomass+(var_biomass/2)^2)^0.5)
+biomass_upr<- biomass*exp((1.96*var_biomass+(var_biomass/2)^2)^0.5)
+
+x<-(rlnorm(10000,log(biomass),sqrt(sum(dat$var_i))))
+boxplot(x)
+abline(h=biomass)
+```
+
+
+#----------------------------------------------------------------------
+# 
+#  boot strap
+#
+#----------------------------------------------------------------------
+
+```{r}
+a<-exp(-12.31097)# grams
+b<-3.1
+dat<-data.frame(l=runif(1000,20,200))
+dat$er<-rnorm(length(dat$l),0,0.3)
+dat$w_obs<-a*dat$l^b * exp(dat$er)
+dat$ln_w_obs<-log(dat$w_obs)
+dat$ln_l<-log(dat$l)
+biomass<-sum(dat$w_obs)
+plot(dat$l,dat$w_obs)
+library(simpleboot)
+fit<-lm(ln_w_obs~ln_l,dat)
+lboot <- lm.boot(fit, R = 1000,rows=FALSE)
+mse<-summary(fit)$sigma^2
+X<-model.matrix(~ln_l,dat)
+lboot$boot.list[[1]]
+boot_biomass<-sapply(lboot$boot.list,function(xx)
+    {
+    mse<-xx$rstderr^2
+    var_i<-sapply(1:1000,function(i)
+        {
+        mse*(1+t(as.matrix(X[i,1:2]))%*%(t(X)%*%X)^-1%*%as.matrix(X[i,1:2]))
+        })
+    return(sum(exp(fitted(fit)+var_i/2)))
+    })
+dat_sim<-dat
+sim_biomass<-c()
+for(i in 1:1000)
+    {    
+    dat_sim$er<-rnorm(length(dat_sim$l),0,0.3)
+    dat_sim$w_obs<-a*dat_sim$l^b * 
+        exp(dat_sim$er)
+    sim_biomass<-c(sim_biomass,
+        sum(dat_sim$w_obs))
+    }
+# Histogram Colored (blue and red)
+par(mfrow=c(2,1))
+hist(boot_biomass,col=rgb(1,0,0,0.5));abline(v=biomass)
+hist(sim_biomass,col=rgb(0,0,1,0.5));abline(v=biomass)
+box()
+
+
+```
+
+
+## variance for total
+ 
+
+## Setting up the data

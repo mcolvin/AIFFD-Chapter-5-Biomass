@@ -13,7 +13,7 @@ output:
 ---
 
 <!--
-rmarkdown::render("box-2.Rmd",output_format="word_document")# build website
+rmarkdown::render("box-2.Rmd",output_format="word_document")
 -->
 
 
@@ -24,25 +24,53 @@ and the remaining fish are measured for length only. This is
 advantageous as the variance for total biomass can be reduced by 
 accounting for variability in weight among fish by exploiting the 
 relationship between length and weight. The length weight relationship 
-predicts the expected (i.e., mean) weight of fish where only length was 
-measured and the estimate of total biomass then estimated by summing the 
-predicted weights. The variance can be estimated as well and 95% 
-confidence intervals calculated using the variance of the predicted 
-weight. 
- 
+predicts the expected weight of fish where only length was measured and 
+the estimate of total biomass can be estimated by with a non-parametric 
+boostrap that resamples the model residuals to make many new datasets of 
+predicted values and then biomass estimated by summing the predicted 
+weights. The 95% confidence intervals calculated by finding the 0.025 
+and the 0.975 quantiles. However the bias associated with predicting 
+weight from length propagates when estimating biomass for a sample and 
+results in an underestimate of biomass and therefore some caution is 
+needed to account for the bias and some resampling to quantify the
+uncertainty in the biomass estimate. This 
+box demonstrates: 1) how to fit length weight data and estimate weight, 
+albeit biased, 2) apply a bias correction to estimated weights, 3) a 
+non-parametric bootstrap approach that shuffles the residuals among 
+observed values to estimate 95% confidence intervals for the estimated 
+biomass. 
 
-## Setting up the data
+```{r,echo=FALSE}
+ylb_lw<-read.csv("yellow-bass.csv")
+N<-nrow(ylb_lw)
+missing<-sum(is.na(ylb_lw[,2]))
+lw<-N-missing
+```
 
-The data is 2 columns, length and weight for common carp in mm and kg 
-respectively. There were xx common carp captured. Length was measured on 
-all captured common carp and weight was measured for xx fish. 
+
+
+# The data
+
+The data is 2 columns, length and weight for yellow bass 
+_Morone mississippiensis_ from Clear Lake, IA, in mm and g 
+respectively. There were `r N`
+ yellow bass in th sample. Length was measured on 
+all captured yellow bass and weight was measured for `r lw` fish. To 
+estiamte biomass for the sample `r missing`. The code
+chunk below reads in the data, looks at the first 6 rows,
+and plots the data with a rug plot of the underlying lengths.
+The rug plots illustrates where there may be fish that have lengths
+but not weight and is useful to ensure the data used to estimate
+the weight length relationship covers the lengths that need an 
+estimated weight.  
+
+
 
 ```{r,eval=FALSE}
 ylb_lw<-read.csv("yellow-bass.csv")
 # look at the first few rows of the data
 head(ylb_lw)
 # plot the data
-
 plot(weight_g~length_mm,data=ylb_lw,
     xlab="Length (mm)",
     ylab="Weight (g)")
@@ -55,8 +83,10 @@ rug(ylb_lw[which(!is.na(ylb_lw$weight_g)),]$length_mm)
 
 The expected weight for a given length is estimated by log linear 
 regression in the R code chunk below. First the length and weight data 
-are log transformed. Then a linear model is fit to the log transformed 
-data. The data is visualized using the `plot` function. 
+are log transformed with the `log()` function. In R the default for the log function is 
+the natural log (i.e., $log_{e}$). Then a linear model is fit to the 
+log transformed 
+data. The linearized data is visualized using the `plot()` function. 
 
 ```{r}
 ylb_lw$ln_length<-log(ylb_lw$length)
@@ -64,97 +94,159 @@ ylb_lw$ln_weight<-log(ylb_lw$weight)
 plot(ln_weight~ln_length,data=ylb_lw,
     xlab="Log fish length (mm)",
     ylab="Log fish weight (kg)")
-    
-exp(sum(na.omit(ylb_lw$ln_weight))    )
-(sum(na.omit(ylb_lw$weight))    )
-    
-    sum(na.omit(ylb_lw$ln_weight))
 ```
 
 A linear regression is fit to the log transformed length and weight data 
-using `lm`. And the model output summarized and model fit added to the 
-plot of raw data to visualize model fit. 
+using the `lm()` function. And the model output summarized and model fit 
+added to the plot of raw data using the `abline()` function to visualize model fit. 
+
+
 
 ```{r}
+# fit the length weight model for log transformed length
+# and weight
 fit<- lm(ln_weight~ln_length,data=ylb_lw)
+# linear model summary information
 summary(fit)
+# plot the raw log transformed length and weight data
 plot(ln_weight~ln_length,data=ylb_lw,
     xlab="Log fish length (mm)",
     ylab="Log fish weight (kg)")
+# add a line of predicted weights on log scale
 abline(coef(fit)[1],coef(fit)[2])
 ```
 
-The fitted model can be used to calculate the expected weight given the 
-length for fish that were not measured for length using the `predict` 
-function. Using the argument `se.fit=TRUE` in the predict function 
-returns the standard error for each estimated mean weight in the data 
-set. The standard error associated with each estimated mean will be used 
-to estimate the variance for the biomass estimate. 
+## Bias corrected predicted weight
+
+The variance of the predicted weight is used to correct the bias in the 
+predicted weight. To calculate the bias corrected weights for a given 
+length the `predict()` function is used to get the uncorrected predicted 
+weight.
 
 ```{r}
 # calculate the estimated mean weight for a fish of
 # a given length
-mean_weight<-predict(fit,
-    newdata=data.frame(ln_length=ylb_lw$ln_length),
-    se.fit = TRUE)
-# get the need bits from the list returned
-mean_weight<-data.frame(mean_weight=mean_weight$fit,
-    std_error=mean_weight$se.fit)
-
+ylb_lw$predicted_ln_weight<-predict(fit,
+    newdata=data.frame(ln_length=ylb_lw$ln_length))
 # take a look at the predicted mean weights and standard errors
-head(mean_weight)
+head(ylb_lw)
 ```
 
-```{r,eval=FALSE}
-x<-rlnorm(10,10,0.3)
-sd_log_scale= sqrt(var(x))/mean(x)
+The overall model mean squared error is used to peform the bias
+correction which is extracted from the fitted `lm()` object
+and squared to get the means squared error. 
 
-sd_log_scale*mean=sqrt(var(x))
-(sd_log_scale*mean)^2=var(x) # variance for each predication
+```{r}
+# get mean squared error from model fit
+mse<-summary(fit)$sigma^2
+```
+
+The next code chunk is a bit complicated but in order to correct the 
+predictions the first step is to create the model design matrix and
+solve for the inverse. This process needs to be applied to
+each predicted. The bias correction is then the predicted
+weight on log scale plus the variance divided by 2. 
+
+
+```{r}
+X<-model.matrix(~ln_length,ylb_lw)
+X_prime<-t(X)# transpose the design matrix
+ylb_lw$var_i<-sapply(1:nrow(ylb_lw),function(i)
+    {
+    mse*(1+t(as.matrix(X[i,1:2]))%*%(X_prime%*%X)^-1%*%as.matrix(X[i,1:2]))
+    })
+ylb_lw$W_hat_corrected<- exp(ylb_lw$predicted_ln_weight+ylb_lw$var_i/2)
+```
+
+Plotting the corrected and the uncorrected predicted weights
+shows that the corrected weight is slighly higher, reflecting 
+the bias correction.
+
+```{r}
+plot(weight_g~length_mm,ylb_lw)
+points(W_hat_corrected~length_mm,ylb_lw,col="red")
+# uncorrected predicted weight
+ylb_lw$W_hat_uncorrected<-exp(ylb_lw$predicted_ln_weight)
+points(W_hat_uncorrected~length_mm,ylb_lw,col="blue")
+```
+
+The corrected weight can now be used to estimate biomass 
+by summing up the values. Comparing the corrected and the 
+uncorrected values, you notice the uncorrected biomass is 
+less than the bias corrected biomass. 
+
+```{r}
+biomass<-sum(ylb_lw$W_hat_corrected)
+biomass_uncorrected<-sum(ylb_lw$W_hat_uncorrected)
+```
+
+The log transformation used to linearize the length
+weight relationship makes calculating a confidence
+interval for the biomass estimate difficult and in 
+some cases unreasonable because of the long tails the
+occur with a log normal distribution. Bootstrapping
+provides a practical way to correct the bias associated
+with the log transformation and quantify the uncertainty
+around the estimated biomass. The code chunk below
+uses the `simpleboot` package to resample the residuals
+from the fitted model and the model estimated mean squared
+error to estimate unbiased weight and then sum up the 
+predictions for 1000 replicates. The 0.025 and the 0.975
+quantiles are used for the 95% confidence intervals. 
+
+
+```{r}
+library(simpleboot)
+# fit the model, as done above
+fit<-lm(ln_weight~ln_length,ylb_lw)
+# mean squared error from the fitted model
+mse<-summary(fit)$sigma^2 
+# the design matrix
+X<-model.matrix(~ln_length,ylb_lw)
+# transpose of the design matrix
+X_prime<-t(X)
+# resample the residuals from the fitted model
+lboot <- lm.boot(fit, R = 1000,rows=FALSE)
+```
+
+The result of the bootstrap is contained in a list
+the first element of the list is returned below. 
+```{r}
+lboot$boot.list[[1]]
+```
+
+The `sapply()` function takes each list element
+and estimates the predicted weight for each weight,
+corrects the bias, and then returns the estimated
+biomass for each bootstrap replicate. 
+```{r}
+boot_biomass<-sapply(lboot$boot.list,function(xx)
+    {
+    mse<-xx$rstderr^2
+    var_i<-sapply(1:nrow(ylb_lw),function(i)
+        {
+        mse*(1+t(as.matrix(X[i,1:2]))%*%(X_prime%*%X)^-1%*%as.matrix(X[i,1:2]))
+        })
+        
+    return(sum(exp(xx$coef[1]+xx$coef[2]*ylb_lw$ln_length+var_i/2)))
+    })
+```
+
+The vector of biomass values are plotted below and the 
+95% confidence intervals determined using the`quantile()` 
+function. The confidence interval is narrow as we would expect given
+the relationship of length and weight. 
+
+```{r}
+hist(boot_biomass)
+abline(v=biomass)
+ci<-quantile(boot_biomass,prob=c(0.025,0.975))
+ci
 ```
 
 
 
 
-The biomass estimate is now the sum of the mean weights given the 
-measured lengths. Recall though weight values remain on log scale.
-
-```{r,eval=FALSE}
-ln_biomass<- sum(mean_weight$mean_weight)
-```
-
-The variance associated with the biomass estimate is
-the sum of the standard errors squared and is calculated
-in the R code chunk below. 
-
-```{r,eval=FALSE}
-ln_biomass_variance<- sum(mean_weight$std_error)^2
-```
-
-The 95% confidence intervals for the biomass estimate are calculated
-as previously done for the simple random sample and the stratified random
-sample, but in this case the values are still on log scale.
-
-```{r,eval=FALSE}
-# t value 
-# note the lower value is negative and the upper is positive
-t_value<-qt(p=c(0.025,0.975), df=sum(sample_size$weight)-1)
-lower_95_ci<- ln_biomass+t_value[1]*sqrt(ln_biomass_variance)
-upper_95_ci<- ln_biomass+t_value[2]*sqrt(ln_biomass_variance)
-```
-
-The real biomass and 95% confidence interval estimates can be
-calculated by exponentiating each value to move from log scale back to 
-kilograms.
-
-```{r,eval=FALSE}
-# biomass estimate
-exp(ln_biomass)
-# lower 95% confidence interval for biomass
-exp(lower_95_ci)
-# upper 95% confidence interval for biomass
-exp(upper_95_ci)
-```
 
 # References
 

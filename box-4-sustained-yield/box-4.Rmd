@@ -1,0 +1,158 @@
+---
+title: ""
+header-includes:
+  - \usepackage{amsmath, graphicx}
+output: 
+  html_document:
+    theme: readable
+    highlight: tango
+  word_document:  
+    fig_width: 6.5  
+    fig_height: 6.5 
+    reference_docx: markdown_word_template_1.docx
+---
+
+<!--
+rmarkdown::render("box-4-projecting-biomass-dynamics.Rmd",output_format="word_document")# build website
+-->
+
+
+# Projecting biomass dynamics
+
+
+## Libraries needed for analysis
+
+```{r}
+library(deSolve)
+```
+
+## Setting up the models
+
+### Graham Schaefer
+if(m==3){dB<- r*B*(log(Bmax/B)) - C}
+
+### Pella Tomlinson
+if(m==4){dB<- (r/p)*B*(1-(B/Bmax)^p) - C}
+
+### Fox
+if(m==5){dB<- r*B*((Bmax-B)/Bmax) - C}
+
+## Differential versus difference model
+
+
+### Numerically integrating continuous biomass dynamics
+
+
+
+```{r}
+ode_fox<-function(t,x,parms)
+    {
+    # set the state variable 
+    B<-x 
+    
+    # set the parameters
+    r<-parms[1]
+    Bmax<-parms[2]
+    F<-parms[3]
+    
+    # the Fox model of biomass dynamics as a 
+    # ordinary differential equation
+    yield<- F*B
+    dB<- r*B*(log(Bmax/B))  - F*B
+    return(list(c(dB),Y=as.vector(yield)))# as.vector drops Y.F name baggage
+    }
+parameters<-c(r=0.3,Bmax=10000,F=0.1)
+initial_biomass<- c(B=10000)
+solution<- ode(
+    y=initial_biomass, 
+    times=seq(0,100,by=0.1), 
+    func=ode_fox, 
+    parms=parameters, 
+    method="rk4")
+solution<-as.data.frame(solution)
+
+plot(B~time,solution,ylab="Biomass",xlab="Time",las=1,main="")
+```
+
+
+```{r}
+F_eval<-seq(0,1.6,by=0.01)
+out<-data.frame()
+for(i in 1:length(F_eval))
+    {
+    parameters<-c(r=0.3,Bmax=10000,F=F_eval[i])
+    initial_biomass<- c(B=10000)
+    solution<- ode(
+        y=initial_biomass, 
+        times=seq(0,100,by=0.1), 
+        func=ode_fox, 
+        parms=parameters, 
+        method="rk4")
+    solution<-as.data.frame(solution)
+    solution$F<- F_eval[i]
+    out<-rbind(out,solution)
+    }
+
+lattice::xyplot(B~time,out,group=F,type="l",xlab="Time",
+    ylab="Biomass")   
+    
+tail(out)
+
+equilibrium_values<- subset(out, time>99.9999)
+plot(Y~F,equilibrium_values,ylab="Sustained yield",xlab="Time",las=1,main="")
+```
+
+
+
+
+
+
+
+```{r}
+diff_fox<-function(t,x,parms)
+    {
+    # set the state variable 
+    B<-x 
+    
+    # set the parameters
+    r<-parms[1]
+    Bmax<-parms[2]
+    F<-parms[3]
+    
+    # the Fox model of biomass dynamics as a 
+    # ordinary differential equation
+    yield<- F*B
+    B<-B+r*B*(log(Bmax/B))  - F*B
+    return(list(c(B),Y=as.vector(yield)))# as.vector drops Y.F name baggage
+    }
+
+F_eval<-seq(0,1,by=0.01)
+out<-data.frame()
+for(i in 1:length(F_eval))
+    {
+    parameters<-c(r=0.3,Bmax=10000,F=F_eval[i])
+    initial_biomass<- c(B=10000)
+    solution<- ode(
+        y=initial_biomass, 
+        times=seq(0,100,by=1), 
+        func=diff_fox, 
+        parms=parameters, 
+        method="iteration")
+    solution<-as.data.frame(solution)
+    solution$F<- F_eval[i]
+    out<-rbind(out,solution)
+    }
+
+lattice::xyplot(B~time,out,group=F,type="l",xlab="Time",
+    ylab="Biomass")   
+    
+tail(out)
+
+equilibrium_values<- subset(out, time>99.9999)
+plot(Y~F,equilibrium_values,ylab="Sustained yield",xlab="Time",las=1,main="")
+```
+
+
+
+
+

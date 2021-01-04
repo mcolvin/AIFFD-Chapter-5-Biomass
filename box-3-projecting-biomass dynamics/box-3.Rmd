@@ -1,0 +1,184 @@
+---
+title: ""
+header-includes:
+  - \usepackage{amsmath, graphicx}
+output: 
+  html_document:
+    theme: readable
+    highlight: tango
+  word_document:  
+    fig_width: 6.5  
+    fig_height: 6.5 
+    reference_docx: markdown_word_template_1.docx
+---
+
+<!--
+rmarkdown::render("box-3.Rmd",output_format="word_document")# build website
+-->
+
+
+# Projecting biomass dynamics
+
+## Libraries needed for analysis
+
+```{r}
+library(deSolve)
+```
+
+## Setting up the models
+
+### Graham Schaefer
+if(m==3){dB<- r*B*(log(Bmax/B)) - C}
+
+### Pella Tomlinson
+if(m==4){dB<- (r/p)*B*(1-(B/Bmax)^p) - C}
+
+### Fox
+if(m==5){dB<- r*B*((Bmax-B)/Bmax) - C}
+
+## Differential versus difference model
+
+
+### Numerically integrating continuous biomass dynamics
+
+```{r}
+ode_gs<-function(t,x,parms)
+    {
+    # set the state variable 
+    B<-x 
+    
+    # set the parameters
+    r<-parms[1]
+    K<-parms[2]
+    F<-parms[3]
+    
+    # the Graham-Schaefer model of biomass dynamics as a 
+    # ordinary differential equation
+    dB<- r*B*(1-(B/K))-F*B
+    return(list(dB))
+    }
+parameters<-c(r=0.3,K=10000,F=0.1)
+initial_biomass<- c(B=10000)
+solution<- ode(
+    y=initial_biomass, 
+    times=seq(0,50,by=0.1), 
+    func=ode_gs, 
+    parms=parameters, 
+    method="rk4")
+solution<-as.data.frame(solution)
+plot(B~time,solution,ylab="Biomass",xlab="Time",las=1,main="")
+```
+
+```{r}
+ode_gs<-function(t,x,parms)
+    {
+    # set the state variable 
+    B<-x [1]
+    Y<-x[2]
+    # set the parameters
+    r<-parms[1]
+    K<-parms[2]
+    F<-parms[3]
+    
+    # the Graham-Schaefer model of biomass dynamics as a 
+    # ordinary differential equation
+    dB<- r*B*(1-(B/K))-F*B
+    # keep track of fishery yield, accumulates over time
+    dY<- F*B
+    return(list(c(dB,dY)))
+    }
+parameters<-c(r=0.3,K=10000,F=0.1)
+# set initial biomass and yield
+initial_biomass<- c(B=10000,Y=0)
+solution<- ode(
+    y=initial_biomass, 
+    times=seq(0,50,by=0.1), 
+    func=ode_gs, 
+    parms=parameters, 
+    method="rk4")
+solution<-as.data.frame(solution)
+plot(B~time,solution,ylab="Biomass",xlab="Time",las=1,main="",type='l',
+    ylim=c(0,10000))
+points(Y~time,solution,ylab="Biomass",xlab="Time",las=1,main="")
+```
+
+
+Keeping track of annual yield
+
+```{r}
+ode_gs<-function(t,x,parms)
+    {
+    # set the state variable 
+    B<-x [1]
+    Y<-x[2]
+    # set the parameters
+    r<-parms[1]
+    K<-parms[2]
+    F<-parms[3]
+    
+    # the Graham-Schaefer model of biomass dynamics as a 
+    # ordinary differential equation
+    dB<- r*B*(1-(B/K))-F*B
+    # keep track of fishery yield, accumulates over time
+    dY<- F*B
+    return(list(c(dB,dY),Y=dY))
+    }
+parameters<-c(r=0.3,K=10000,F=0.1)
+# set initial biomass and yield
+initial_biomass<- c(B=10000,Y=0)
+solution<- ode(
+    y=initial_biomass, 
+    times=seq(0,50,by=0.1), 
+    func=ode_gs, 
+    parms=parameters, 
+    method="rk4")
+solution_cont<-as.data.frame(solution)
+plot(B~time,solution_cont,ylab="Biomass",xlab="Time",las=1,main="",type='l',
+    ylim=c(0,10000))
+points(Y~time,solution_cont,ylab="Biomass",xlab="Time",las=1,main="")
+```
+
+
+## Iterative evaluation of biomass dynamics
+
+Difference model
+
+```{r}
+diff_gs<-function(t,x,parms)
+    {
+    # set the state variable 
+    B<-x 
+    
+    # set the parameters
+    r<-parms[1]
+    K<-parms[2]
+    F<-parms[3]
+    
+    # the Graham-Schaefer model of biomass dynamics as a 
+    # difference equation
+    B<-B+r*B*(1-(B/K))-F*B
+    return(list(B))
+    }
+parameters<-c(r=0.3,K=10000,F=0.1)
+parameters[1]<-exp(parameters[1])-1
+parameters[3]<-exp(parameters[3])-1
+
+
+initial_biomass<- c(B=10000)
+solution<- ode(
+    y=initial_biomass, 
+    times=seq(0,50,by=0.1), 
+    func=diff_gs, 
+    parms=parameters, 
+    method="iteration")
+solution_diff<-as.data.frame(solution)
+plot(B~time,solution_diff,ylab="Biomass",xlab="Time",las=1,main="")
+points(B~time,solution_cont,col="red")
+```
+
+
+
+
+
+
+

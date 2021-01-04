@@ -1,0 +1,71 @@
+---
+title: ""
+header-includes:
+  - \usepackage{amsmath, graphicx}
+output: 
+  html_document:
+    theme: readable
+    highlight: tango
+  word_document:  
+    fig_width: 6.5  
+    fig_height: 6.5 
+    reference_docx: markdown_word_template_1.docx
+---
+
+<!--
+rmarkdown::render("box-2.Rmd",output_format="word_document")# build website
+-->
+
+
+# Box 5.5 Pulsed biomass dynamics
+
+Differential versus difference model
+
+
+```{r}
+library(deSolve)
+```
+
+if(m==3){dB<- r*B*(log(Bmax/B)) - C}
+if(m==4){dB<- (r/p)*B*(1-(B/Bmax)^p) - C}
+if(m==5){dB<- r*B*((Bmax-B)/Bmax) - C}
+
+
+
+
+```{r}
+harvestFun <- function(t, y, parms){
+    B<- y
+    F<- as.numeric(parms['F'])
+    B <-as.numeric(B - ifelse(round(t- trunc(t),1) == 0.2, B*F*0.86, B*F*0.14))
+    return(c(B))}	
+
+
+ode_fox<-function(t,x,parms)
+    {
+    # set the state variable 
+    B<-x 
+    
+    # set the parameters
+    r<-parms[1]
+    Bmax<-parms[2]
+    F<-parms[3]
+    
+    # the Fox model of biomass dynamics as a 
+    # ordinary differential equation
+    yield<- F*B
+    dB<- r*B*(log(Bmax/B))  - F*B
+    return(list(c(dB),Y=as.vector(yield)))# as.vector drops Y.F name baggage
+    }
+parameters<-c(r=0.3,Bmax=10000,F=0.1)
+initial_biomass<- c(B=10000)
+modelout  <-ode(
+    y 		= initialValues, 
+    times 	= times, 
+    func 	= semidiscrete, 
+    parms 	= parms,
+    events 	= list(func= harvestFun, time=evtimes),
+    method 	= "lsoda")
+
+
+
