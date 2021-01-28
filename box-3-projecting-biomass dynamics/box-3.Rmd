@@ -10,175 +10,206 @@ output:
     fig_width: 6.5  
     fig_height: 6.5 
     reference_docx: markdown_word_template_1.docx
+bibliography: ref.bib
+csl: ecology.csl
 ---
 
 <!--
-rmarkdown::render("box-3.Rmd",output_format="word_document")# build website
+rmarkdown::render("box-3.Rmd",output_format="all")# build website
 -->
 
 
-# Projecting biomass dynamics
+# Projecting continuous biomass dynamics
+
+This box demonstrates how to:
+
+1. project continuous biomass dynamics from an ordinary differential equation using R,
+2. determine the appropriate time step for the numerical integrator, and
+3. the effect of different numerical integrators.
 
 ## Libraries needed for analysis
+
+The code below loads the `deSolve` package that can be used to solve
+ordinary differential equations (ODEs) or difference equations in 
+R [@S242]. 
 
 ```{r}
 library(deSolve)
 ```
 
-## Setting up the models
+## Setting up the biomass dynamics model
 
-### Graham Schaefer
-if(m==3){dB<- r*B*(log(Bmax/B)) - C}
+Projecting biomass dynamics as an ordinary differential equation (ode) 
+or a difference model can be done using a function. The function has a 
+a couple of parts to it that are common regardless of the model (e.g., 
+Graham Schaefer, Pella Tomlinson, Fox) or the type of model (ode or 
+difference). The 4 parts within the function are: 
 
-### Pella Tomlinson
-if(m==4){dB<- (r/p)*B*(1-(B/Bmax)^p) - C}
+1. Defining the state variables (e.g., biomass, harvest)
+2. Defining the parameters (e.g., intrinsic growth rate, carrying capacity, fishing mortality)
+3. Definging the ode or difference equation. This part differs between 
+the 2 types and is demonstrated below. 
+4. A `return()` function that is a list of the state variables and other 
+quantities that are of interest like the amount of fish harvested. 
+ 
 
-### Fox
-if(m==5){dB<- r*B*((Bmax-B)/Bmax) - C}
+## Graham Schaefer Model
 
-## Differential versus difference model
+The function below sets up the Graham Schaefer model @G108 as an ODE 
+where $\frac{dB}{dt}= r\cdot B \cdot \frac{K-B}{K}-F\cdot B$ and that 
+can be used with a numerical integrator from the `deSolve` package. The 
+function takes 3 input arguments, `t` which is the timestep, `x` which 
+is a vector of the state variables, and `parms` which is a vector of the 
+parameters. 
 
-
-### Numerically integrating continuous biomass dynamics
 
 ```{r}
+# Graham Schaefer model specified as an ODE
 ode_gs<-function(t,x,parms)
     {
-    # set the state variable 
+    # 1. set the state variable 
     B<-x 
     
-    # set the parameters
-    r<-parms[1]
-    K<-parms[2]
-    F<-parms[3]
+    # 2. set the parameters
+    r<-parms["r"]
+    K<-parms["K"]
+    F<-parms["F"]
     
-    # the Graham-Schaefer model of biomass dynamics as a 
-    # ordinary differential equation
+    # 3. set up the Graham-Schaefer model of biomass dynamics as an ode
     dB<- r*B*(1-(B/K))-F*B
+    
+    # 4. return the relevant quantities for the time step
     return(list(dB))
     }
-parameters<-c(r=0.3,K=10000,F=0.1)
+```
+
+To run the model and project biomass the values for each parameter must 
+be specified in a vector. 
+
+
+```{r}
+parameters<-c(r=0.6,K=10000,F=0.1)
+```
+
+The initial biomass must also be set to give the projected biomass 
+dynamics as starting point. Here the initial biomass is set to 10,000. 
+
+
+```{r}
 initial_biomass<- c(B=10000)
-solution<- ode(
-    y=initial_biomass, 
-    times=seq(0,50,by=0.1), 
-    func=ode_gs, 
-    parms=parameters, 
-    method="rk4")
-solution<-as.data.frame(solution)
-plot(B~time,solution,ylab="Biomass",xlab="Time",las=1,main="")
 ```
+
+
+The `ode()` function from the `deSolve` package provides several 
+numerical integrators (e.g., Euler, Runge-Kutta 4) that can be used to 
+project biomass dynamics. There is no set rules for which, in general if 
+biomass dynamics are smooth over time the type of integrator is a 
+tradeoff of the resolution of the timestep and whether dynamics are the 
+similar throughout the projection. 
+
 
 ```{r}
-ode_gs<-function(t,x,parms)
+dt<-c(0.5,0.25, 0.1, 0.01,0.001)
+out<-data.frame()
+for(i in 1:length(dt))
     {
-    # set the state variable 
-    B<-x [1]
-    Y<-x[2]
-    # set the parameters
-    r<-parms[1]
-    K<-parms[2]
-    F<-parms[3]
-    
-    # the Graham-Schaefer model of biomass dynamics as a 
-    # ordinary differential equation
-    dB<- r*B*(1-(B/K))-F*B
-    # keep track of fishery yield, accumulates over time
-    dY<- F*B
-    return(list(c(dB,dY)))
+    solution<- ode(
+        y=initial_biomass, 
+        times=seq(0,20,by=dt[i]), 
+        func=ode_gs, 
+        parms=parameters, 
+        method="euler")
+    solution<-as.data.frame(solution)
+    solution$dt<-dt[i]
+    out<-rbind(out,solution)
     }
-parameters<-c(r=0.3,K=10000,F=0.1)
-# set initial biomass and yield
-initial_biomass<- c(B=10000,Y=0)
-solution<- ode(
-    y=initial_biomass, 
-    times=seq(0,50,by=0.1), 
-    func=ode_gs, 
-    parms=parameters, 
-    method="rk4")
-solution<-as.data.frame(solution)
-plot(B~time,solution,ylab="Biomass",xlab="Time",las=1,main="",type='l',
-    ylim=c(0,10000))
-points(Y~time,solution,ylab="Biomass",xlab="Time",las=1,main="")
 ```
 
-
-Keeping track of annual yield
+The code below plots the solutions for the projected biomass
+for decreasing time steps use for the numerical integration. 
 
 ```{r}
-ode_gs<-function(t,x,parms)
-    {
-    # set the state variable 
-    B<-x [1]
-    Y<-x[2]
-    # set the parameters
-    r<-parms[1]
-    K<-parms[2]
-    F<-parms[3]
-    
-    # the Graham-Schaefer model of biomass dynamics as a 
-    # ordinary differential equation
-    dB<- r*B*(1-(B/K))-F*B
-    # keep track of fishery yield, accumulates over time
-    dY<- F*B
-    return(list(c(dB,dY),Y=dY))
-    }
-parameters<-c(r=0.3,K=10000,F=0.1)
-# set initial biomass and yield
-initial_biomass<- c(B=10000,Y=0)
-solution<- ode(
-    y=initial_biomass, 
-    times=seq(0,50,by=0.1), 
-    func=ode_gs, 
-    parms=parameters, 
-    method="rk4")
-solution_cont<-as.data.frame(solution)
-plot(B~time,solution_cont,ylab="Biomass",xlab="Time",las=1,main="",type='l',
-    ylim=c(0,10000))
-points(Y~time,solution_cont,ylab="Biomass",xlab="Time",las=1,main="")
+plot(B~time,solution,
+    ylab="Biomass",
+    xlab="Time",
+    las=1,
+    type='n',
+    main="")
+points(B~time,out,subset=dt==0.5,type="l",lty=1)
+points(B~time,out,subset=dt==0.25,type="l",lty=2)
+points(B~time,out,subset=dt==0.1,type="l",lty=3)
+points(B~time,out,subset=dt==0.01,type="l",lty=4)
+points(B~time,out,subset=dt==0.001,type="l",lty=5)
+legend("topright",title="Time step",c("0.5","0.25","0.1","0.01","0.001"),
+    lty=c(1,2,3,4,5),bty="n")
 ```
 
+### Interpretation
 
-## Iterative evaluation of biomass dynamics
+The ending biomass is the same for all the 5 time steps evaluated. However, there
+was some discrepancy in projected biomass up to year 10. The 0.5 time step resulted
+in biomass projections that were lower than the 0.01 and 0.001 time steps. The take 
+away from this example is that the time step can be important to accurately project
+biomass dynamics. As a rule of thumb the smallest time step within the computational
+burden allowed should be used. In other words, as time step decreases in size the 
+amount of computer time needed to project the dynamics increases, therefore 
+pick a time step that is sufficiently accurate for the needs of the analysis and
+the model runs in a reasonable amount of time. 
 
-Difference model
+## Comparing numerical integrators
+
+Similar to the issue with time step, the accuracy of numerical integrations
+varies with the numerical integrator used. The most basic numerical 
+integrator is the Euler (`euler`) while the Runge-Kutta 4 (`rk4`) and 
+and the Livermore family (`lsoda`) are much more sophisticated and 
+in many cases more accurate at a coarser time step than the Euler [@S233; @S243].
+The code chunk below loops over the 3 numerical integrates using the parameters
+and initial biomass of the previous example to with a time step of 0.25. 
 
 ```{r}
-diff_gs<-function(t,x,parms)
+integrator<-c("euler","rk4","lsoda")
+out<-data.frame()
+for(i in 1:length(integrator))
     {
-    # set the state variable 
-    B<-x 
-    
-    # set the parameters
-    r<-parms[1]
-    K<-parms[2]
-    F<-parms[3]
-    
-    # the Graham-Schaefer model of biomass dynamics as a 
-    # difference equation
-    B<-B+r*B*(1-(B/K))-F*B
-    return(list(B))
+    solution<- ode(
+        y=initial_biomass, 
+        times=seq(0,20,by=0.25), 
+        func=ode_gs, 
+        parms=parameters, 
+        method=integrator[i])
+    solution<-as.data.frame(solution)
+    solution$integrator<-integrator[i]
+    out<-rbind(out,solution)
     }
-parameters<-c(r=0.3,K=10000,F=0.1)
-parameters[1]<-exp(parameters[1])-1
-parameters[3]<-exp(parameters[3])-1
-
-
-initial_biomass<- c(B=10000)
-solution<- ode(
-    y=initial_biomass, 
-    times=seq(0,50,by=0.1), 
-    func=diff_gs, 
-    parms=parameters, 
-    method="iteration")
-solution_diff<-as.data.frame(solution)
-plot(B~time,solution_diff,ylab="Biomass",xlab="Time",las=1,main="")
-points(B~time,solution_cont,col="red")
 ```
 
+The code below plots the solutions for the 3 integrators. 
+Similar to the previous results where the `euler` integrator
+was used for decreasing time steps, the projections using the
+`rk4` and the `lsoda` integrators are identical but slightly
+higher than the `euler`. 
 
+```{r}
+plot(B~time,solution,
+    ylab="Biomass",
+    xlab="Time",
+    las=1,
+    type='n',
+    main="")
+points(B~time,out,subset=integrator=="euler",type="l",lty=1)
+points(B~time,out,subset=integrator=="rk4",type="l",lty=2)
+points(B~time,out,subset=integrator=="lsoda",type="l",lty=3)
+legend("topright",title="Integrator", c("euler","rk4","lsoda"),
+    lty=c(1,2,3),bty="n")
+```
 
+## Take home
 
-
-
-
+Any integrator can be used to numerically solve and project
+biomass dynamics using ODEs, but sone initial effort should be 
+used to evaluate which integrator will be used and what time step
+is sufficient for the problem. The most accurate projects will use
+small time steps but there are diminishing returns in accuracy
+that trade off with model run times. In closing a time step is
+sufficiently small if decreasing it does not appreiciable change
+the biomass dynamics over time simulated.
