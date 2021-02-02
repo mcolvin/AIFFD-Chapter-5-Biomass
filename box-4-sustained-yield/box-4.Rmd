@@ -13,36 +13,48 @@ output:
 ---
 
 <!--
-rmarkdown::render("box-4-projecting-biomass-dynamics.Rmd",output_format="word_document")# build website
+rmarkdown::render("box-4.Rmd",output_format="word_document")
 -->
 
 
-# Projecting biomass dynamics
+# Projecting biomass dynamics to find biological reference points
 
+## Box overview 
+
+Analytical solutions exist to determine biological reference points like
+$F_{MSY}$, $B_{MSY}$, and $MSY$
+for biomass dynamics models like the Graham Schaefer, Fox, and the Pella
+Tomlinson. However there are instances where analytical solutions might not
+be available because the underlying biomass dynamics model was modified to 
+account for more biological realism. Additionally, the analytical solutions
+for biological reference points assume continuous biomass dynamics and therefore
+if a difference equation is used to project biomass dynamics, biological reference points
+may be biased. This box demonstrates how to find 
+the biological reference points for a biomass dynamics model by simulation of 
+a biomass dynamics model implemented as an ordinary differential equation or
+as a difference equation. 
+
+This box uses the Fox biomass dynamics model to project biomass dynamics over 
+100 years for varying fishing mortality rates ($F$). The time horizon of 100 years
+was sufficient for this example for the biomass dynamics to reach equilibrium (i.e., 
+change in biomass from one time point to the next is ~0). There are 2 examples, one 
+for the Fox model implemented as an ODE and another with the Fox model implemented as 
+a difference model. 
 
 ## Libraries needed for analysis
 
+The libraries listed in the code chunk below are required to plot the 
+biomass dynamics and numerically integrate the biomass dynamics models. 
+
 ```{r}
+library(lattice)
 library(deSolve)
 ```
 
-## Setting up the models
+## Evaluated reference points for a continuous biomass dynamics model
 
-### Graham Schaefer
-if(m==3){dB<- r*B*(log(Bmax/B)) - C}
-
-### Pella Tomlinson
-if(m==4){dB<- (r/p)*B*(1-(B/Bmax)^p) - C}
-
-### Fox
-if(m==5){dB<- r*B*((Bmax-B)/Bmax) - C}
-
-## Differential versus difference model
-
-
-### Numerically integrating continuous biomass dynamics
-
-
+The function below sets up the Fox model of biomass dynamics as an 
+ODE.
 
 ```{r}
 ode_fox<-function(t,x,parms)
@@ -61,6 +73,13 @@ ode_fox<-function(t,x,parms)
     dB<- r*B*(log(Bmax/B))  - F*B
     return(list(c(dB),Y=as.vector(yield)))# as.vector drops Y.F name baggage
     }
+```
+
+The code chunk below sets the parameters of the model, initial biomass,
+and the then numerically integrates the model using the `lsoda` numerical 
+integration routine. The projection biomass dynamics are saved as a `data.frame`.
+
+```{r}
 parameters<-c(r=0.3,Bmax=10000,F=0.1)
 initial_biomass<- c(B=10000)
 solution<- ode(
@@ -68,12 +87,36 @@ solution<- ode(
     times=seq(0,100,by=0.1), 
     func=ode_fox, 
     parms=parameters, 
-    method="rk4")
+    method="lsoda")
 solution<-as.data.frame(solution)
-
-plot(B~time,solution,ylab="Biomass",xlab="Time",las=1,main="")
 ```
 
+The code chunk below plots the biomass dynamics. Looking at the 
+biomass dynamics approaching year 100 there is no visible change in
+biomass, suggesting equilibrium has been achieved. 
+
+```{r}
+plot(B~time,solution,ylab="Biomass",
+    xlab="Time",las=1,main="",type="l")
+```
+
+The code chunk below returns the last 6 rows of the solution and
+the yield or biomass values do not change appreciably confirming that
+the biomass dynamics are in what is called approximate equilibrium (i.e., 
+changes in biomass dynamics are too small to be consequential). 
+
+```{r}
+tail(solution)
+```
+
+To evaluate biological reference points the biomass and yield at 
+approximate equilibrium need to be identified for $F$ varying from 0 to 
+a value that that exceeds the level that overfishing occurs so that the 
+maximum sustained yield can be identified. This is don be looping over
+$F$ values and projecting the biomass dynamics out for a sufficiently long 
+time, 100 years in this example. The code chunk below performs the loop
+and numerical integration. The results are collected in a `data.frame` 
+using the `rbind` function for each value of $F$ evaluated.  
 
 ```{r}
 F_eval<-seq(0,1.6,by=0.01)
@@ -92,20 +135,104 @@ for(i in 1:length(F_eval))
     solution$F<- F_eval[i]
     out<-rbind(out,solution)
     }
+```
 
-lattice::xyplot(B~time,out,group=F,type="l",xlab="Time",
+The code chunk below plots the biomass dynamics for each $F$ value
+evaluated for visual evaluation to ensure approximate equlibrium was 
+reached for all $F$ values. 
+
+```{r}
+xyplot(B~time,out,group=F,type="l",xlab="Time",
     ylab="Biomass")   
-    
-tail(out)
+```
 
-equilibrium_values<- subset(out, time>99.9999)
-plot(Y~F,equilibrium_values,ylab="Sustained yield",xlab="Time",las=1,main="")
+A quick look at the last 6 rows of the dataset we can see that 
+the last time step evaluated is 100. We can use the `subset` function to extract the 
+last value of biomass and yield for each $F$ value 
+evaluated. 
+
+```{r}
+tail(out)
+equilibrium_values<- subset(out, time==100)
+```
+
+Plotting yield versus $F$ illustrates the sustained or 
+equilibrium yield curve. The top of the curve is the 
+maximum sustained yield ($MSY$).
+
+```{r}
+# plot equilibrium yield values
+plot(Y~F,equilibrium_values,ylab="Sustained yield",
+    xlab="Time",las=1,main="",
+    type='l')
+```
+
+## Biological reference points
+
+Biological reference points can be calculated from the equilibrium 
+yield curve. Specifically, the biomass and $F$ values associated with the $MSY$ can be
+identified by using the `which.max` function to return the row of a `data.frame` 
+that has the maximum of a vector. 
+
+```{r}
+# get biomass and F that maximize equilibrium yield
+bio_ref_points<-equilibrium_values[which.max(equilibrium_values$Y),]
+```
+
+The value contained in `bio_ref_points` are $B_{MSY}$ and $F_{MSY}$. 
+
+```{r}
+bio_ref_points
+```
+
+
+## Finding $F_{0.1}$
+
+The numerical approach can also be used to identify the more conservative
+$F_{0.1}$. The code chunk below calculates the slope over the equilibrium yield 
+curve. The slope at the origin is then multiplied by 0.1 and the tangent
+line on the curve identified. 
+
+```{r}
+equilibrium_values$slopes<- c(0,diff(equilibrium_values$Y)/0.01)
+slope10<-equilibrium_values$slopes[2]*0.1
+```
+
+The `approxfun` function is useful here to interpolate values. The 
+code chunk below sets up an interpolation function that returns an
+$F$ and yield value associated with a slope. The code chunk below
+returns the $F$ and yield associated with 10% of the yield slope at the origin. 
+
+```{r}
+find_F<- approxfun(equilibrium_values$slopes,equilibrium_values$F)
+f_01<-find_F(slope10)
+find_Y<- approxfun(equilibrium_values$slopes,equilibrium_values$Y)
+Y_01<-find_Y(slope10) 
+```
+
+The plot below shows the 10% of the slope at the origin, the 
+$F$ value that maximizes sustained yield ($F_{MSY}$) and $F$ where
+the slope of the tangent line of sustained yield curve is 10% of the slope 
+of a tangent at the origin. 
+
+```{r}
+plot(Y~F,equilibrium_values,ylab="Sustained yield",
+    xlab="Fising mortality",las=1,main="",
+    type="l")
+abline(0,slope10,lwd=3,lty=2)
+points(Y~F,bio_ref_points,pch=19)
+points(f_01,Y_01,pch=17)
+legend("bottomright", lty=c(2,NA,NA),pch=c(NA,19,17),
+    legend=c("Slope at the origin",expression("F"[MSY]), expression("F"[0.1])))
 ```
 
 
 
+## Evaluated reference points for a discrete biomass dynamics model
 
-
+The code chunk below replicates the analysis done above but for 
+the Fox model implemented as a difference model assuming a discrete
+time step of 1 year. 
 
 
 ```{r}
@@ -120,12 +247,12 @@ diff_fox<-function(t,x,parms)
     F<-parms[3]
     
     # the Fox model of biomass dynamics as a 
-    # ordinary differential equation
+    # difference equation
     yield<- F*B
-    B<-B+r*B*(log(Bmax/B))  - F*B
+    B<-B + r*B*(log(Bmax/B))  - F*B
     return(list(c(B),Y=as.vector(yield)))# as.vector drops Y.F name baggage
     }
-
+# evaluate sustained yield
 F_eval<-seq(0,1,by=0.01)
 out<-data.frame()
 for(i in 1:length(F_eval))
@@ -142,15 +269,38 @@ for(i in 1:length(F_eval))
     solution$F<- F_eval[i]
     out<-rbind(out,solution)
     }
-
-lattice::xyplot(B~time,out,group=F,type="l",xlab="Time",
+# look at sustained yield by F
+xyplot(B~time,out,group=F,type="l",xlab="Time",
     ylab="Biomass")   
-    
-tail(out)
-
+# subset values at year 100
 equilibrium_values<- subset(out, time>99.9999)
-plot(Y~F,equilibrium_values,ylab="Sustained yield",xlab="Time",las=1,main="")
+# plot equilibrium values
+plot(Y~F,equilibrium_values,ylab="Sustained yield",
+    xlab="Fishing mortality",las=1,main="",
+    type="l")
+# subset biological reference points
+bio_ref_points<-equilibrium_values[which.max(equilibrium_values$Y),]
+bio_ref_points
+# find F_0.1
+equilibrium_values$slopes<- c(0,diff(equilibrium_values$Y)/0.01)
+slope10<-equilibrium_values$slopes[2]*0.1
+find_F<- approxfun(equilibrium_values$slopes,equilibrium_values$F)
+f_01<-find_F(slope10)
+find_Y<- approxfun(equilibrium_values$slopes,equilibrium_values$Y)
+Y_01<-find_Y(slope10)
+# illustrate F_MSY and F_0.1
+plot(Y~F,equilibrium_values,ylab="Sustained yield",
+    xlab="Fishing mortality",las=1,main="",
+    type="l")
+points(Y~F,bio_ref_points,pch=19)
+points(f_01,Y_01,pch=17)
+legend("bottomright", pch=c(19,17),
+    legend=c(expression("F"[MSY]), expression("F"[0.1])))
 ```
+
+
+
+
 
 
 

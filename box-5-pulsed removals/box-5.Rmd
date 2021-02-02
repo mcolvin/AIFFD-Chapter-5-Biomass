@@ -10,62 +10,189 @@ output:
     fig_width: 6.5  
     fig_height: 6.5 
     reference_docx: markdown_word_template_1.docx
+bibliography: ref.bib
+csl: ecology.csl 
 ---
 
 <!--
-rmarkdown::render("box-2.Rmd",output_format="word_document")# build website
+rmarkdown::render("box-5.Rmd",output_format="word_document")# build website
+if(m==3){dB<- r*B*(log(Bmax/B)) - C}
+if(m==4){dB<- (r/p)*B*(1-(B/Bmax)^p) - C}
+if(m==5){dB<- r*B*((Bmax-B)/Bmax) - C}
 -->
 
 
-# Box 5.5 Pulsed biomass dynamics
+# Box 5 Projecting continuous biomass dynamics with pulsed removals
 
-Differential versus difference model
+## Box overview 
+
+Inland freshwater fisheries systems are commonly harvested over short 
+periods, representing a pulsed biomass removal. This is commonly the 
+case when invasive species like common carp _Cyprinus carpio_ and 
+bigheaded carp _Hypophthalmichthys nobilis_ use commercial fisheries. 
+Additionally, biomass can be removed from a recreational fishery over a 
+short period when short seasons occur within an annual time period. 
+This box demonstrates how to project semidiscrete biomass dynamics 
+models, which are continuous biomass dynamics models that allow for
+pulsed dynamics like biomass removals [@C229].
+
+
+## Libraries needed for analysis
+
+The libraries listed in the code chunk below are required to 
+numerically integrate the biomass dynamics models. 
 
 
 ```{r}
 library(deSolve)
 ```
 
-if(m==3){dB<- r*B*(log(Bmax/B)) - C}
-if(m==4){dB<- (r/p)*B*(1-(B/Bmax)^p) - C}
-if(m==5){dB<- r*B*((Bmax-B)/Bmax) - C}
+## Projecting semidiscrete biomass dynamics
 
+To project semidiscrete biomass dynamics an additional 
+function is needed to simulate the addition or removal 
+from the system. First a function that specifies the 
+ordinary differential equation the describes the biomass
+dynamics is specified in the code chunk below. This box
+assumes the Fox biomass dynamics model [@F75]. Note that
+in the code chunk, differs from previous box examples as
+the change in Yield over each time step is set to 0 because
+the amount of biomass removed from the system is a pulsed event
+the occurs at specific times. The way that numerical integrators
+work, simply specifying the removal amount in the function that 
+defines the ODE is not sufficient because the corresponding change 
+in biomass and harvest yield is adjusted by the time step ($dt$). 
+By fixing `dY` to 0 in the function we can keep track of the amount 
+of biomass harvested from the system for evaluating management policies. 
+
+
+```{r}
+ode_fox<-function(t,x,parms)
+    {
+    # set the state variable 
+    B<-x [1]
+    Y<-x [2]
+    # set the parameters
+    r<-parms[1]
+    Bmax<-parms[2]
+
+    # the Fox model of biomass dynamics as a 
+    # ordinary differential equation
+    yield<- F*B
+    dB<- r*B*(log(Bmax/B)) 
+    dY<- 0
+    return(list(c(dB,dY)))
+    }
+```
+
+To simulate the removal events another function is needed that
+is applied as specified time steps. The function has the same
+input arguments as `ode_fox`. In the function instantaneous changes
+in biomass can be specified. In this example the fishing mortality 
+is applied at a single instance and the biomass is reduced by the 
+removal amount as `B-B*F`. Additionally, the amount removed is
+specified as the biomass times the fishing mortality `B*F`. The
+function is set up to keep track of biomass and yield. Defining
+the outputs to work with `ode_fox` and solving using `ode` is a 
+bit different. The values the function returns needs to be the same
+length as the initial values, so a vector `ini` is specified 
+below that specifies the initial biomass at `10000` and harvest
+yield at `0`. As you will see below this is a bit of a work
+around to keep track of the amount of biomass removed. 
+
+
+```{r}
+harvestFun <- function(t, x, parms){
+    B<- x[1]
+    F<- parms['F']
+    x[1] <- B-B*F # biomass - removed biomass
+    x[2] <- B*F # biomass removed
+    return(x)
+    }	
+```
+
+
+Here the model parameters are specified for the intrinsic growth rate
+maximum biomass and fishing mortality. A vector of initial biomass
+amount is specified and harvest yield as an object `ini`.
 
 
 
 ```{r}
-harvestFun <- function(t, y, parms){
-    B<- y
-    F<- as.numeric(parms['F'])
-    B <-as.numeric(B - ifelse(round(t- trunc(t),1) == 0.2, B*F*0.86, B*F*0.14))
-    return(c(B))}	
+parms<-c(r=0.3,Bmax=10000,F=0.1)
+ini<- c(B=10000,Y=0)
+```
 
+The final part of setting up the model to project biomass dynamics with
+pulsed removals requires specifying when biomass will be removed and 
+the time to evaluate the model. In this example, biomass is pulsed out
+of the system at the beginning of year 1, 2, and 4. The model will project the 
+biomass dynamics for 10 years using a timestep of 0.1. Experience using events
+in the `ode` function had found that at times floating points can result in an 
+event not occurring and therefore rounding the times to the corresponding digits
+of the timestep minimizes this occurrence.
 
-ode_fox<-function(t,x,parms)
-    {
-    # set the state variable 
-    B<-x 
-    
-    # set the parameters
-    r<-parms[1]
-    Bmax<-parms[2]
-    F<-parms[3]
-    
-    # the Fox model of biomass dynamics as a 
-    # ordinary differential equation
-    yield<- F*B
-    dB<- r*B*(log(Bmax/B))  - F*B
-    return(list(c(dB),Y=as.vector(yield)))# as.vector drops Y.F name baggage
-    }
-parameters<-c(r=0.3,Bmax=10000,F=0.1)
-initial_biomass<- c(B=10000)
+```{r}
+evtimes<-c(1,2,4) # when removals occur
+times<-round(seq(0,10,by=0.1),1) # round to time step digits 
+```
+
+The model is project using the `ode` function. However a new
+argument is included, `events`. The `events` argument can take 
+different forms, in this example the function that specifies
+how removals occur and the times those events occur are 
+specified as a list. 
+
+```{r}
 modelout  <-ode(
-    y 		= initialValues, 
+    y 		= ini, 
     times 	= times, 
-    func 	= semidiscrete, 
+    func 	= ode_fox, 
     parms 	= parms,
     events 	= list(func= harvestFun, time=evtimes),
     method 	= "lsoda")
+modelout<-as.data.frame(modelout)   
+```
 
+The results are plotted using the code chunk below. You can 
+see the change in biomass at times 1, 2, and 4 that result from 
+the pulsed removal. 
 
+```{r}
+plot(B~time,modelout,type='l',ylab="Biomass",xlab="Year",las=1)
+```
+To fully interpret the amount of biomass removed we need to modify 
+the output a bit. In short the model keeps track of biomass and 
+harvest yield with changes governed by the ODE. However when removal 
+events occur the state variables (biomass, harvest yield) are changed
+for that instant. Looking at the results of the output below you can 
+see where the harvest event was triggered at time 1, 2, and 4 but the 
+harvest yield values then remain the same until the next event. This is 
+because the change in harvest yield `dY` was set to 0. The harvest yield is
+this rest at the next event. 
+
+```{r}
+modelout
+```
+To clean up this artifact the harvest yield at times other than when 
+the event occurred are set to 0 using the code below. Note that 
+while the event was triggered at time 1, 2, and 4 the harvest yield is 
+recorded in timestep 1.1, 2.1, and 4.1. The code below sets values
+other than the event times (i.e., 1, 2, 4) plus the time step to
+0 as harvest did not occur at those times, but the `ode` function 
+carried the harvest yield over those steps because `dY` was set
+to 0 so that the harvest yield could be tracked in the projection.
+The `round` function is used to ensure the right times are selected. 
+
+```{r}
+modelout[!(modelout$time%in%(round(evtimes+0.1,1))),]$Y<-0
+```
+The plot below illustrates the pulsed harvest removals that occurred at time
+1, 2, and 4. 
+
+```{r}
+plot(Y~time,modelout,type="h",ylab="Harvest",xlab="Year",las=1)
+```
+
+## References
 
