@@ -1,0 +1,255 @@
+---
+title: ""
+header-includes:
+  - \usepackage{amsmath, graphicx}
+output: 
+  html_document:
+    theme: readable
+    highlight: tango
+  word_document:  
+    fig_width: 6.5  
+    fig_height: 6.5 
+    reference_docx: markdown_word_template_1.docx
+bibliography: ref.bib
+csl: ecology.csl 
+---
+
+<!--
+rmarkdown::render("box-6.Rmd",output_format="word_document")# build website
+if(m==3){dB<- r*B*(log(Bmax/B)) - C}
+if(m==4){dB<- (r/p)*B*(1-(B/Bmax)^p) - C}
+if(m==5){dB<- r*B*((Bmax-B)/Bmax) - C}
+-->
+
+
+# Box 6 Fitting a continuous biomass dynamics model to data
+
+## Box overview 
+
+This box demonstrates how to estimate parameters of a continuous 
+biomass dynamics model using some simulated harvest data. The box
+demonstrates how to
+
+1. fit a biomass dynamics model to fishery catch
+1. fit a biomass dynamics model using additional information like fishery 
+independent monitoring. 
+
+
+## Libraries needed for analysis
+
+The libraries listed in the code chunk below are required to 
+numerically integrate the continuous biomass dynamics models. 
+
+```{r}
+library(deSolve)
+```
+
+## Getting started
+
+Estimating the parameters of a continuous biomass dynamics
+model can be done from harvest data, however there must
+be strong contrasts in the biomass dynamics for the estimates
+to work. The so called one-way trips described in H177 where
+stock biomass decreases over time will not provide sufficient 
+contrasts (i.e., periods of stock growth and decline in biomass)
+to estimate parameters reliably. In this box 
+
+
+
+### Setting up the biomass dynamics function
+
+```{r}
+ode_fox<-function(t,x,parms)
+    {
+    # set the state variable 
+    B<-x[1]
+    H<-x[2]
+    # set the parameters
+    r<-parms[1] # intrinsic growth rate
+    Bmax<-parms[2] # maximum biomass
+    F<-parms[3]    
+    q<-parms[4] # catchability for fishery independent sampling
+
+    # effort
+    #f<-f_fun(t) # function to 
+    # the Fox model of biomass dynamics as a 
+    # ordinary differential equation
+    ## change in biomass
+    dB<- r*B*(log(Bmax/B))  - F*B
+    ## change in harvest
+    dH<- F*B
+    # fishery independent monitoring
+    I<- q*B
+    return(list(c(dB,dH),cpue=I))
+    }
+```
+In the `ode_fox` function the annual fishing mortality rate varies and 
+the amount of harvest is tracked as a state which will be used. 
+
+
+### Simulate biomass dynamics with varying annual fishing mortality
+
+```{r}
+set.seed(12345)
+n_years<-10
+f<-runif(10,100,5000)
+f_fun<-approxfun(x=c(1:n_years),
+    y=f,
+    method="constant",
+    rule=2)
+parameters<-c(r=0.35,
+    Bmax=10000,
+    F=0.5,
+    q=0.03)    
+initial_biomass<- c(B=9000,H=0)
+solution<- ode(
+    y=initial_biomass, 
+    times=seq(1,n_years+0.05,by=0.05), 
+    func=ode_fox, 
+    parms=parameters, 
+    method="lsoda")
+solution<-as.data.frame(solution)
+solution$time<-round(solution$time,2)
+plot(solution$B,type="l")
+plot(solution$H,type="l")
+plot(solution$cpue,type="l")
+```
+
+
+```{r}
+solution$year<-floor(solution$time)
+# annual catch
+catch<-aggregate(cbind(time,H)~year,solution, max)[,c(1,3)]
+catch$H<-c(catch$H[1],diff(catch$H))
+# CATCH PER UNIT EFFORT 
+cpue<- subset(solution,
+    time %in% round(seq(1,n_years, 1)+0.5,2))
+cpue<-data.frame(time=cpue$time,
+    cpue=cpue$cpue.q)
+obs<-list(cpue=cpue,catch=catch)
+```
+
+The function below contains 3 parts. The function
+requires at a minimum an argument to accept the parameter inputs
+from the `optim` function `par`. The second argument is 
+used to specified the observed yield, needed to calculate
+the goodness of fit metric. In the function, the 
+first part specifies the inputs needed to project
+biomass dynamics from `ode_fox`. The second part
+projects the biomass dynamics given the input parameters.
+The third part calculates a good of fit metric for each
+observation and returns the sum of the metric. 
+
+```{r}
+ode_fox<-function(t,x,parms)
+    {
+    # set the state variable 
+    B<-x[1]
+    H<-x[2]
+    # set the parameters
+    r<-parms[1] # intrinsic growth rate
+    Bmax<-parms[2] # maximum biomass
+    q<-parms[3] # catchability for fishery independent sampling
+
+    # the Fox model of biomass dynamics as a 
+    # ordinary differential equation
+    ## change in biomass
+    catch<- catch_fun(t)
+    dB<- r*B*(log(Bmax/B))  - catch
+    ## change in harvest
+    dH<- catch
+    # fishery independent monitoring
+    I<- q*B
+    return(list(c(dB,dH),cpue=I))
+    }
+```
+
+
+
+```{r}
+ssq_fun<-function(par,obs)
+    {
+    # 1. PARAMETER NEED TO PROJECT ode_fox
+    ## 1.1. effort 
+    catch_fun<-approxfun(x=obs$catch$year,
+        y=obs$catch$H,
+        method='constant',
+        rule=2)
+    # 1.2. BDM PARAMETERS    
+    parameters<-c(r=par['r'],   # intrinsic growth rate
+        Bmax=par['Bmax'],       # Bmax
+        q=par['q'])             # catchability
+    ## 1.3. INITIAL BIOMASS AS A FRACTION OF BMAX    
+    initial_values<- c(B=par['Bmax']*par['B0'],
+        H=0)
+    print(parameters)
+    # 2. BDM TO BE PROJECTED GIVEN F, BMAX, R, AND B0
+    solution<- ode(
+        y=initial_values, 
+        times=seq(1,n_years+0.05,by=0.05), 
+        func=ode_fox, 
+        parms=parameters, 
+        method="lsoda")
+    solution<-as.data.frame(solution)
+    
+    # 3. OBJECTIVE FUNCTION TO MINIMIZE
+    ## 3.1. SUBSET OUT YIELD AT THE END OF THE YEAR
+    ##      TO COMPARE TO OBSERVED YIELD
+    pred_cpue<- subset(solution,round(time,2)%in% 
+        round(obs$cpue$time,2))
+    ## 3.2. SUM OF LOG NORMAL MULTPLICATIVE ERRORS
+    sserror<-sum((obs$cpue$cpue-pred_cpue$cpue.q)^2)
+    return(sserror) # RETURN OBJECTIVE VALUE
+    }
+```
+
+Initial starting values are needed for the optimizer.
+These values are the best guess at the values. In this 
+optimization initial value for B_{max}, $r$, $B_0$ and
+$F_{year}$ are needed for the optimization to being. 
+
+
+```{r}
+ini_par<-c(Bmax=15000,
+    B0=0.7,
+    r=0.1,
+    q=0.1)
+```
+
+The `optim` function is used to return a minimum value, in this case the 
+function to be minimized is the sum of squares error returned by 
+`ssq_fun`. In the function below the bounded `BFGS` optimizer is used 
+because inputs in the model need to be bounded to be greater than 0. The 
+upper value bounds are also specified to keep the optimization 
+reasonable. In general, if the optimization converges at a boundary then 
+you should reevaluate the bounds. If optimization converges within the 
+bounds then the solution is likely sufficient, however there are 
+benefits to ensuring the solution is the likely the true minimum by 
+rerunning the optimization with varying start values to see of the 
+optimization results in similar fitted values. 
+
+ssq_fun(par=ini_par,obs=obs)
+
+```{r}
+fit<-optim(par=ini_par,
+    fn=ssq_fun,
+    method="L-BFGS-B",
+    lower=rep(5000,0,0,0),
+    upper=c(70000,1,0.5,0.3),
+    #control=list(parscale=c(1000,0.1,0.1,0.1)),
+    obs=obs)   
+```
+
+
+```{r}
+options(scipen=15)
+fit$par
+```
+
+
+
+# https://rstudio-pubs-static.s3.amazonaws.com/226974_2b2fded698f448ecaac8f9d5a4480942.html
+
+
+## References
+
