@@ -28,17 +28,20 @@ if(m==5){dB<- r*B*((Bmax-B)/Bmax) - C}
 
 This box demonstrates how to estimate parameters of a continuous 
 biomass dynamics model using some simulated harvest data. The box
-demonstrates how to
+demonstrates how to:
 
-1. fit a biomass dynamics model to fishery catch
-1. fit a biomass dynamics model using additional information like fishery 
-independent monitoring. 
+1. simulate continuous biomass dynamics with harvest and fishery independent monitoring,
+1. use grid sampling to identify initial starting values to try fitting the model with, and
+1. fit a biomass dynamics model given fishery catch and catch per unit effort from 
+fishery independent monitoring
 
 
 ## Libraries needed for analysis
 
 The libraries listed in the code chunk below are required to 
-numerically integrate the continuous biomass dynamics models. 
+numerically integrate the continuous biomass dynamics models
+used in this box exercise. 
+
 
 ```{r}
 library(deSolve)
@@ -47,16 +50,44 @@ library(deSolve)
 ## Getting started
 
 Estimating the parameters of a continuous biomass dynamics
-model can be done from harvest data, however there must
+model can be done using only harvest data, however there must
 be strong contrasts in the biomass dynamics for the estimates
-to work. The so called one-way trips described in H177 where
+to work. The so called one-way trips described in [@H177] where
 stock biomass decreases over time will not provide sufficient 
 contrasts (i.e., periods of stock growth and decline in biomass)
-to estimate parameters reliably. In this box 
+to estimate parameters reliably. This box simulates a biomass 
+system that undergoes variable harvest as a function of effort and 
+has a monitoring program independent of the fishery. 
+
+To perform the analysis you will need to 
+
+1. set up a biomass dynamics function to simulate biomass dynamics given 
+harvest and the fishery independent monitoring program, 
+2. simulate the catch and fishery independent CPUE,
+3. develop a function that returns the sums of squares errors, in this 
+case the squared deviations of predicted fishery independent CPUE given 
+the fitted model, 
+4. evaluate a range of plausible combinations of model parameters to 
+identify reasonable initial values, and 
+5. use an optimization function to identify the combination of 
+parameters that minimizes the sums of squared errors. 
 
 
 
-### Setting up the biomass dynamics function
+### 1. Setting up the biomass dynamics function
+
+The code below is a function that given the inputs `t`, `x`, and `parms` 
+calculates the change in biomass, `dB`, change in harvest `dH`, and the 
+fishery independent catch per unit effort `I`. The function below specifies 
+that the biomass dynamics conform to the @F75 model of biomass dynamics. New in 
+this function relative to the previous boxes is the addition of a fishery independent
+monitoring program that is used to estimate relative biomass as CPUE ($I$) is the product
+of catchability ($q$) and the biomass ($B$) at time $t$. In the function CPUE is returned
+for every timestep. In the function below the CPUE is returned as a separate value after the
+state variables (biomass, harvest) as `return(list(c(dB,dH),cpue=I))`. Any value
+can be returned from the function in this way but the first item in the list must be
+the state variables. 
+
 
 ```{r}
 ode_fox<-function(t,x,parms)
@@ -69,7 +100,6 @@ ode_fox<-function(t,x,parms)
     Bmax<-parms[2] # maximum biomass
     F<-parms[3]    
     q<-parms[4] # catchability for fishery independent sampling
-
     # effort
     #f<-f_fun(t) # function to 
     # the Fox model of biomass dynamics as a 
@@ -80,26 +110,37 @@ ode_fox<-function(t,x,parms)
     dH<- F*B
     # fishery independent monitoring
     I<- q*B
-    return(list(c(dB,dH),cpue=I))
+    return(list(c(dB,dH),cpue=I))# note state variables first in list returned then other values of interest
     }
 ```
-In the `ode_fox` function the annual fishing mortality rate varies and 
-the amount of harvest is tracked as a state which will be used. 
+
+The function is then used by the `ode` function to numerically integrate 
+the biomass dynamics (given effort and fishing mortality) and keep track 
+of the CPUE for the fishery independent monitoring. 
 
 
 ### Simulate biomass dynamics with varying annual fishing mortality
 
+The code below simulates continuous biomass dynamics given the inputs to 
+`ode_fox` specified in the previous section for 20 years. The parameters 
+used to govern biomass dynamics are
+
+* $B_{max}$ = 10000,
+* $r$ = 0.35,
+* $F$ = 0.4, and 
+* $q$ = 0.03. 
+
 ```{r}
 set.seed(12345)
-n_years<-10
-f<-runif(10,100,5000)
-f_fun<-approxfun(x=c(1:n_years),
-    y=f,
-    method="constant",
-    rule=2)
+n_years<-20
+#f<-runif(n_years,100,5000)
+#f_fun<-approxfun(x=c(1:n_years),
+#    y=f,
+#    method="constant",
+#    rule=2)
 parameters<-c(r=0.35,
     Bmax=10000,
-    F=0.5,
+    F=0.4,
     q=0.03)    
 initial_biomass<- c(B=9000,H=0)
 solution<- ode(
@@ -167,14 +208,17 @@ ode_fox<-function(t,x,parms)
 
 
 ```{r}
-ssq_fun<-function(par,obs)
-    {
+
     # 1. PARAMETER NEED TO PROJECT ode_fox
     ## 1.1. effort 
     catch_fun<-approxfun(x=obs$catch$year,
         y=obs$catch$H,
         method='constant',
         rule=2)
+
+ssq_fun<-function(par,obs)
+    {
+
     # 1.2. BDM PARAMETERS    
     parameters<-c(r=par['r'],   # intrinsic growth rate
         Bmax=par['Bmax'],       # Bmax
@@ -199,6 +243,7 @@ ssq_fun<-function(par,obs)
         round(obs$cpue$time,2))
     ## 3.2. SUM OF LOG NORMAL MULTPLICATIVE ERRORS
     sserror<-sum((obs$cpue$cpue-pred_cpue$cpue.q)^2)
+    sserror<-ifelse(is.na(sserror),100000000,sserror)
     return(sserror) # RETURN OBJECTIVE VALUE
     }
 ```
@@ -210,11 +255,28 @@ $F_{year}$ are needed for the optimization to being.
 
 
 ```{r}
-ini_par<-c(Bmax=15000,
-    B0=0.7,
-    r=0.1,
-    q=0.1)
+ini_par<-c(Bmax=10000,
+    B0=0.9,
+    r=0.35,
+    q=0.03)
 ```
+
+grid search
+
+combos<-expand.grid(
+    Bmax=seq(5000,15000,by=500),
+    B0=seq(0.5,1,0.1),
+    r=seq(0.05,0.5,0.05),
+    q=seq(0.005,0.05, 0.005));dim(combos)
+out<-lapply(c(1:nrow(combos)),function(x)
+    {
+    out<- as.data.frame(combos[x,])
+    out$ssr<-ssq_fun(par=unlist(combos[x,]), obs=obs) 
+    print(x/nrow(combos))
+    return(out)
+    })
+out<-do.call("rbind",out)
+
 
 The `optim` function is used to return a minimum value, in this case the 
 function to be minimized is the sum of squares error returned by 
@@ -228,20 +290,18 @@ benefits to ensuring the solution is the likely the true minimum by
 rerunning the optimization with varying start values to see of the 
 optimization results in similar fitted values. 
 
+
+real sensitive to initial values
 ssq_fun(par=ini_par,obs=obs)
 
 ```{r}
 fit<-optim(par=ini_par,
     fn=ssq_fun,
     method="L-BFGS-B",
-    lower=rep(5000,0,0,0),
+    lower=rep(5000,0,0.01,0.001),
     upper=c(70000,1,0.5,0.3),
-    #control=list(parscale=c(1000,0.1,0.1,0.1)),
+    control=list(parscale=c(1000,0.1,0.1,0.1)),
     obs=obs)   
-```
-
-
-```{r}
 options(scipen=15)
 fit$par
 ```
